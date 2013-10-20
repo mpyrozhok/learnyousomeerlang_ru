@@ -1,9 +1,9 @@
-all: learnyousomeerlang_ru.pdf ./images/*.png
+all: learnyousomeerlang_ru.pdf ./images/*.png clean
 
 TEXCMD := pdflatex -interaction=batchmode
 
-learnyousomeerlang_ru.pdf: learnyousomeerlang_ru.tex
+learnyousomeerlang_ru.pdf: learnyousomeerlang_ru.tex chapter*.tex
 	$(TEXCMD) learnyousomeerlang_ru.tex
 
 clean:
-	rm *.aux *.log *.out
+	rm -f *.aux *.log *.out
