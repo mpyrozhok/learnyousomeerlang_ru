@@ -17,7 +17,7 @@
 \colorbox{lgray}
 {
 \begin{minipage}{1.0\linewidth}
-    \textbf{Замечание:} хоть Erlang и позволяет обращаться с ошибками в функциональном коде сразу несколькими способами, но чаще всего вы будете слышать, что делать ничего не нужно, а нужно позволить процессу упасть.
+    \textbf{Замечание:} хоть Erlang и позволяет использовать сразу несколько способов управления ошибками в функциональном коде, но чаще всего вы будете слышать, что делать ничего не нужно, а нужно позволить процессу упасть.
     Я уже намекал на это во \ref{introduction}~введении.
     Механизмы, которые позволяют вам программировать в таком стиле, находятся в параллельной части языка.
 \end{minipage}
@@ -352,5 +352,213 @@ in function  hhfuns:add/2
 Когда элемент не удаётся найти, в исключении бросается значение \ops{default}, которое обрабатывает вышестоящая функция и заменяет на пользовательское значение по умолчанию.
 Это избавляет программиста модуля от необходимости передавать значение по умолчанию в каждую функцию алгоритма поиска и позволяет сконцентрироваться лишь на благополучных исходах.
 
-Чтобы облегчить отладку кода, старайтесь использовать броски для нелокальных возвратов только в одном модуле.
+Чтобы облегчить отладку кода, старайтесь сосредоточить все случаи использования бросков для нелокальных возвратов в одном модуле.
 К тому же, это позволит изменять внутреннее устройство модуля без необходимости менять его интерфейс.
+\section{Расправляемся с исключениями}
+\label{dealing-with-exceptions}
+Я уже много раз упоминал о том, что бросками, ошибками и завершениями можно управлять.
+Для этого используют выражения \ops{try \ldots catch}.
+\begin{wrapfigure}{r}{0.15\linewidth}
+    \includegraphics[width=1\linewidth]{catch.png}
+\end{wrapfigure}
+При помощи \ops{try \ldots catch} можно исполнить какое\--либо выражение, и обработать как случай успешного выполнения кода, так и возможные ошибки.
+Для таких выражений используется следующий синтаксис:
+\begin{lstlisting}[style=erlang]
+try Expression of
+    SuccessfulPattern1 [Guards] ->
+        Expression1;
+    SuccessfulPattern2 [Guards] ->
+    Expression2
+catch
+    TypeOfError:ExceptionPattern1 ->
+        Expression3;
+    TypeOfError:ExceptionPattern2 ->
+        Expression4
+end.
+\end{lstlisting}
+
+О \emph{Выражении}, которое находится между \ops{try} и \ops{of} говорят, что оно \emph{защищено}. Это означает, что будет поймано любое исключение, вызванное этим выражением.
+Шаблоны и выражения, которые используются в \ops{try \ldots of} и \ops{catch} ведут себя так же как и в \ops{case \ldots of}.
+Также в \ops{catch} можно заменить \emph{TypeOfError} на \ops{error}, \ops{throw} либо \ops{exit}, для каждого соответcтвующего типа исключений, которые мы рассмотрели в этой главе.
+Если не указывать тип исключения, то по умолчанию используется тип \ops{throw}.
+Попробуем применить наши знания на практике.
+
+Для начала создадим модуль под названием \ops{\href{http://learnyousomeerlang.com/static/erlang/exceptions.erl}{exceptions}}.
+Ничего сложного выдумывать не будем:
+\begin{lstlisting}[style=erlang]
+-module(exceptions).
+-compile(export_all).
+ 
+throws(F) ->
+    try F() of
+        _ -> ok
+    catch
+        Throw -> {throw, caught, Throw}
+    end.
+\end{lstlisting}
+
+Давайте скомпилируем модуль и опробуем его на разных видах исключений:
+\begin{lstlisting}[style=erlang]
+1> c(exceptions).
+{ok,exceptions}
+2> exceptions:throws(fun() -> throw(thrown) end).
+{throw,caught,thrown}
+3> exceptions:throws(fun() -> erlang:error(pang) end).
+** exception error: pang
+\end{lstlisting}
+
+Как видите, этот \ops{try \ldots catch} принимает лишь броски (throws).
+Как я и говорил ранее, без явного указания типа исключения используются броски.
+А теперь запишем функции с catch для каждого типа:
+\begin{lstlisting}[style=erlang]
+errors(F) ->
+    try F() of
+        _ -> ok
+    catch
+        error:Error -> {error, caught, Error}
+    end.
+ 
+exits(F) ->
+    try F() of
+        _ -> ok
+    catch
+        exit:Exit -> {exit, caught, Exit}
+    end.
+\end{lstlisting}
+
+И исполним их:
+\begin{lstlisting}[style=erlang]
+4> c(exceptions).
+{ok,exceptions}
+5> exceptions:errors(fun() -> erlang:error("Die!") end).
+{error,caught,"Die!"}
+6> exceptions:exits(fun() -> exit(goodbye) end).
+{exit,caught,goodbye}
+\end{lstlisting}
+
+Следующий пример демонстрирует как комбинировать все виды исключений в одном \ops{try \ldots catch}.
+Сначала объявим функцию, которая будет генерировать нужные нам исключения:
+\begin{lstlisting}[style=erlang]
+sword(1) -> throw(slice);
+sword(2) -> erlang:error(cut_arm);
+sword(3) -> exit(cut_leg);
+sword(4) -> throw(punch);
+sword(5) -> exit(cross_bridge).
+ 
+black_knight(Attack) when is_function(Attack, 0) ->
+    try Attack() of
+        _ -> "None shall pass."
+    catch
+        throw:slice -> "It is but a scratch.";
+        error:cut_arm -> "I've had worse.";
+        exit:cut_leg -> "Come on you pansy!";
+        _:_ -> "Just a flesh wound."
+    end.
+\end{lstlisting}
+
+В этом примере используется встроенная функция \ops{is\_function/2}, при помощи которой проверяется, что переменная \emph{Attack} \--- это функция арности 0. А теперь добавим ещё одну:
+\begin{lstlisting}[style=erlang]
+talk() -> "blah blah".
+\end{lstlisting}
+\emph{А теперь кое\--что совершенно иное} (MP):
+\begin{lstlisting}[style=erlang]
+7> c(exceptions).
+{ok,exceptions}
+8> exceptions:talk().
+"blah blah"
+9> exceptions:black_knight(fun exceptions:talk/0).
+"None shall pass."
+10> exceptions:black_knight(fun() -> exceptions:sword(1) end).
+"It is but a scratch."
+11> exceptions:black_knight(fun() -> exceptions:sword(2) end).
+"I've had worse."
+12> exceptions:black_knight(fun() -> exceptions:sword(3) end).
+"Come on you pansy!"
+13> exceptions:black_knight(fun() -> exceptions:sword(4) end).
+"Just a flesh wound."
+14> exceptions:black_knight(fun() -> exceptions:sword(5) end).
+"Just a flesh wound."
+\end{lstlisting}
+
+Выражение из 9\--й строки демонстрирует нормальное поведение чёрного рыцаря для случая, когда функция выполняется успешно.
+В каждой последующей строчке показано сопоставление с образцом для исключений согласно их класса (бросок, ошибка, завершение), и причина их возникновения (\ops{slice}, \ops{cut\_arm}, \ops{cut\_leg}).
+
+\begin{wrapfigure}{r}{0.35\linewidth}
+    \includegraphics[width=1\linewidth]{black-knight.png}
+\end{wrapfigure}
+
+В строках 13 и 14 показано выражение, которое используется для ловли исключений, когда все предыдущие выражния не сработали.
+Шаблон \ops{\_:\_} используется в случае, когда вы хотите словить любое исключение какого угодно типа.
+На практике следует использовать этот шаблон с осторожностью: старайтесь защитить ваш код от того, с чем можете справиться, но не более того.
+Чтобы справиться со всем остальным, в Erlang есть другие средства.
+
+После \ops{try \ldots catch} можно добавить дополнительное выражение, которое будет исполнено в любом случае.
+Оно эквивалентно блоку 'finally', который используется во многих других языках:
+\begin{lstlisting}[style=erlang]
+try Expr of
+    Pattern -> Expr1
+catch
+    Type:Exception -> Expr2
+after % this always gets executed
+    Expr3
+end
+\end{lstlisting}
+
+Выражения внутри \ops{after} будут гарантированно исполнены независимо от того, возникли ошибки или нет.
+Стоит отметить, что конструкция \ops{after} не возвращает результат.
+Поэтому её можно использовать лишь для исполнения кода с побочными эффектами.
+Каноническим примером использования этой конструкции может служит ситуация, когда вы хотите убедиться, что файл, из которого вы читаете данные, будет закрыт независимо от того, возникали исключения или нет.
+
+Теперь мы знаем как управлять в Erlang тремя классами исключений при помощи блоков catch.
+Но всю правду я вам не рассказал!
+Между \ops{try} и {of} можно поместить не одно выражение, а несколько!
+\begin{lstlisting}[style=erlang]
+whoa() ->
+    try
+        talk(),
+        _Knight = "None shall Pass!",
+        _Doubles = [N*2 || N <- lists:seq(1,100)],
+        throw(up),
+        _WillReturnThis = tequila
+    of
+        tequila -> "hey this worked!"
+    catch
+        Exception:Reason -> {caught, Exception, Reason}
+    end.
+\end{lstlisting}
+
+При вызове \ops{exceptions:whoa()} мы явно получим \ops{\{caught, throw, up\}} из\--за \ops{throw(up)}.
+Так что да, между \ops{try} и \ops{of} можно помещать несколько выражений\ldots
+
+В \ops{excetions:whoa/0} я попытался показать (а вы, вероятно этого не заметили), что когда мы используем много выражений, нам не всегда важен возвращаемый результат.
+Таким образом, часть \ops{of} немного теряет свой смысл.
+Ну и прекрасно, ведь вы просто можете её убрать:
+\begin{lstlisting}[style=erlang]
+im_impressed() ->
+    try
+        talk(),
+        _Knight = "None shall Pass!",
+        _Doubles = [N*2 || N <- lists:seq(1,100)],
+        throw(up),
+        _WillReturnThis = tequila
+    catch
+        Exception:Reason -> {caught, Exception, Reason}
+    end.
+\end{lstlisting}
+
+Так\--то лучше!
+
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:} важно знать, что защищённая от исключений часть кода не может использовать хвостовую рекурсию.
+    Виртуальая машина должна постоянно держать ссылку на этот код, на случай если возникнет исключение.
+
+    Так как в конструкции \ops{try \ldots catch} без части \ops{of} нет ничего кроме защищённой части, то вызов рекурсивной функции из этой части кода может быть небезопасным для программы, которая должна находиться в запущенном состоянии долгое время (таких программ в Erlang большинство).
+    Через определённое количество итераций на вашей машине закончится память, или ваша программа начнёт замедлятся без явных на то причин.
+    Если вы поместите рекурсивные вызовы между \ops{of} и \ops{catch}, то они будут происходить вне защищённой части, и для них будет выполняться оптимизация последнего вызова.
+
+    Некоторые люди  используют по умолчанию \ops{try \ldots of \ldots catch} вместо \ops{try \ldots catch}, чтобы избежать неожиданных ошибок такого типа.
+    Такая осторожность излишня лишь для кода, который явно не содержит рекурсивные вызовы, и результаты выполнения которого не будут больше нигде использованы. Ну, вы и сами наверняка можете решить, как вам поступить в такой ситуации!
+\end{minipage}
+}
