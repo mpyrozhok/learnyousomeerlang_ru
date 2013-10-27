@@ -561,3 +561,118 @@ im_impressed() ->
     Такая осторожность излишня лишь в коде, который явно не содержит рекурсивные вызовы, и результаты выполнения которого не будут больше нигде использованы. Ну, вы и сами наверняка можете решить, как поступать в такой ситуации!
 \end{minipage}
 }
+\section{Но это ещё не всё!}
+\label{wait-theres-more}
+Казалось бы, этих средств и так достаточно, чтобы быть наравне с другими языками программирования, но в Erlang есть ещё одна структура для управления ошибками.
+Эта структура определяется ключевым словом \ops{catch} и, по сути, вдобавок к верным результатам может возвращать все типы исключений.
+Она может показаться несколько странной, так как отображает исключения немного иначе:
+\begin{lstlisting}[style=erlang]
+1> catch throw(whoa).
+whoa
+2> catch exit(die).
+{'EXIT',die}
+3> catch 1/0.
+{'EXIT',{badarith,[{erlang,'/',[1,0]},
+            {erl_eval,do_apply,5},
+            {erl_eval,expr,5},
+            {shell,exprs,6},
+            {shell,eval_exprs,6},
+{shell,eval_loop,3}]}}
+4> catch 2+2.
+4
+\end{lstlisting}
+
+В этом примере мы видим, что отображение бросков осталось прежним, а завершения и ошибки представлены в виде кортежей \ops{\{'EXIT', Reason\}}.
+Это вызвано тем, что ошибки были вмонтированы в язык после завершений (для них оставили схожее представление для обратной совместимости).
+
+Вот как следует читать эту трассировку стека:
+\begin{lstlisting}[style=erlang]
+5> catch doesnt:exist(a,4).             
+{'EXIT',{undef,[{doesnt,exist,[a,4]},
+            {erl_eval,do_apply,5},
+            {erl_eval,expr,5},
+            {shell,exprs,6},
+            {shell,eval_exprs,6},
+{shell,eval_loop,3}]}}
+\end{lstlisting}
+\begin{itemize}
+    \item Тип этой ошибки \--- \ops{undef}. Это означает, что вызванная функция не определена (см. список в начале главы).
+    \item Сразу за типом ошибки следует трассировка стека.
+    \item Кортеж в самом начале трассировки обозначает последнюю функцию, которая должна была быть вызвана (\ops{\{Module, Function, Arguments\}}).
+        Это та самая неопределённая функция.
+    \item Кортежи, следующие за первым \--- это функции, которые вызывались перед тем как произошла ошибка.
+        Здесь они принимают форму кортежа \ops{\{Module, Function, Arity\}}.
+    \item В общем\--то, вот и всё.
+\end{itemize}
+
+Также можно вручную получить трассировку стека, вызывая функцию \ops{erlang:get\_stacktrace/0} внутри аварийного процесса.
+
+Часто можно увидеть \ops{catch}, записанную следующим образом (мы всё ещё рассматриваем \href{http://learnyousomeerlang.com/static/erlang/exceptions.erl}{exceptions.erl}):
+\begin{lstlisting}[style=erlang]
+catcher(X,Y) ->
+    case catch X/Y of
+        {'EXIT', {badarith,_}} -> "uh oh";
+        N -> N
+    end.
+\end{lstlisting}
+
+И, как мы и ожидали:
+\begin{lstlisting}[style=erlang]
+6> c(exceptions).
+{ok,exceptions}
+7> exceptions:catcher(3,3).
+1.0
+8> exceptions:catcher(6,3).
+2.0
+9> exceptions:catcher(6,0).
+"uh oh"
+\end{lstlisting}
+
+На первый взгляд этот способ перехвата исключений выглядит компактным и простым, но у \ops{catch} есть несколько особенностей.
+Первая \--- это порядок выполнения операций:
+\begin{lstlisting}[style=erlang]
+10> X = catch 4+2.
+* 1: syntax error before: 'catch'
+10> X = (catch 4+2).
+6
+\end{lstlisting}
+
+То, что в примере необходимы скобки, не вполне согласуется с интуицией, если учесть, что большинство выражений в скобки заключать не нужно.
+Ещё одна проблема заключается в том, что невозможно увидеть разницу между представлением исключения и настоящим исключением:
+\begin{lstlisting}[style=erlang]
+11> catch erlang:boat().
+{'EXIT',{undef,[{erlang,boat,[]},
+            {erl_eval,do_apply,5},
+            {erl_eval,expr,5},
+            {shell,exprs,6},
+            {shell,eval_exprs,6},
+{shell,eval_loop,3}]}}
+12> catch exit({undef, [{erlang,boat,[]}, {erl_eval,do_apply,5}, {erl_eval,expr,5}, {shell,exprs,6}, {shell,eval_exprs,6}, {shell,eval_loop,3}]}).
+{'EXIT',{undef,[{erlang,boat,[]},
+            {erl_eval,do_apply,5},
+            {erl_eval,expr,5},
+            {shell,exprs,6},
+            {shell,eval_exprs,6},
+{shell,eval_loop,3}]}}
+\end{lstlisting}
+
+И ошибку невозможно отличить от, собственно, самого завершения.
+Чтобы сгенерировать исключение, приведённое выше, можно было бы также использовать функцию \ops{throw/1}.
+Надо сказать, что использование \ops{throw/1} в \ops{catch} может также представлять собой проблему в другом контексте:
+\begin{lstlisting}[style=erlang]
+one_or_two(1) -> return;
+one_or_two(2) -> throw(return).
+\end{lstlisting}
+
+А вот и страшная проблема:
+\begin{lstlisting}[style=erlang]
+13> c(exceptions).
+{ok,exceptions}
+14> catch exceptions:one_or_two(1).
+return
+15> catch exceptions:one_or_two(2).
+return
+\end{lstlisting}
+
+Так как мы находимся за \ops{catch}, то никогда не знаем наверняка, бросила ли функция исключение или вернула результат!
+На практике это случается не очень часто, но эта особенность повлекла за собой появление конструкции \ops{try \ldots catch} в релизе R10B.
