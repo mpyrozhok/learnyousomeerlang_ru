@@ -1,0 +1,139 @@
+\chapter{Краткий обзор общеизвестных структур данных}
+\label{short-visit-to-common-data-structures}
+\section{Обзор недолгий, обещаю!}
+Функциональное подмножество Erlang вы, скорее всего, теперь понимаете достаточно неплохо, и текст многих программ смогли бы читать без проблем.
+Но, тем не менее, готов поспорить, что вам не вполне ясно как построить настоящую полезную программу, хоть последняя глава и рассказывала о том, как решать задачи в функциональном стиле.
+Говорю я об этом потому, что испытывал точно такие же чувства приблизительно в этот же момент моего обучения.
+Впрочем, если у вас такой проблемы нет, то поздравляю!
+
+В любом случае, я исхожу из того, что мы рассмотрели много всего: большинство базовых типов данных, оболочку, то как писать модули и функции (с рекурсией), различные способы компиляции, управление логикой программы, перехват исключений, абстракция некоторых общих операций и т.д.
+Также мы познакомились с хранением данных в кортежах, списках, и рассмотрели незаконченную реализацию двоичного дерева поиска.
+Но мы совсем не рассматривали другие структуры данных, которые предоставляет программисту стандартная библиотека Erlang.
+\section{Записи}
+\label{records}
+\begin{wrapfigure}{r}{0.35\linewidth}
+    \includegraphics[width=1\linewidth]{record-player.png}
+\end{wrapfigure}
+Прежде всего, записи \--- это хак.
+Они \--- что\--то вроде запоздалой мысли, пришедшей в голову разработчикам языка, и поэтому имеют свои недостатки.
+О недостатках я расскажу позже.
+Записи очень пригождаются, если нам нужна небольшая структура данных, которая предоставляет прямой доступ к именованным атрибутам.
+Поэтому записи в Erlang очень похожи на структуры в C (если вы знакомы с языком C).
+
+Они объявляются так же как и атрибуты модуля:
+\begin{lstlisting}[style=erlang]
+-module(records).
+-compile(export_all).
+ 
+ -record(robot, {name,
+                 type=industrial,
+                 hobbies,
+                 details=[]}).
+\end{lstlisting}
+
+Эта запись представляет информацию о роботах и имеет 4 поля: имя, тип, хобби и подробности.
+Для типа и подробностей, кроме того, задано значение по умолчанию: соответственно \ops{industrial} и \ops{[]}.
+Вот так можно объявить запись в модуле \href{http://learnyousomeerlang.com/static/erlang/records.erl}{records}:
+\begin{lstlisting}[style=erlang]
+first_robot() ->
+    #robot{name="Mechatron",
+        type=handmade,
+        details=["Moved by a small man inside"]}.
+\end{lstlisting}
+
+Запускаем код:
+\begin{lstlisting}[style=erlang]
+1> c(records).
+{ok,records}
+2> records:first_robot().
+{robot,"Mechatron",handmade,undefined,
+    ["Moved by a small man inside"]}
+\end{lstlisting}
+Опа!
+Вот и хак!
+Записи в Erlang \--- это всего лишь синтаксический сахар поверх кортежей.
+К счастью, ситуацию можно улучшить.
+В оболочке Erlang есть команда \ops{rr(Module)}, которая позволяет загружать определения записей из \emph{Module}:
+\begin{lstlisting}[style=erlang]
+3> rr(records).
+[robot]
+4> records:first_robot().        
+#robot{name = "Mechatron",type = handmade,
+    hobbies = undefined,
+    details = ["Moved by a small man inside"]}
+\end{lstlisting}
+
+Совсем другое дело!
+Так с записями намного легче работать.
+Вы можете заметить, что в \ops{first\_robot/0} мы не определяли поле \ops{hobbies}, и в его определении не было значения по умолчанию.
+Erlang неявно присваивает неинициализированным полям значение undefined.
+
+Следующая функция поможет нам увидеть, как ведут себя значения по умолчанию, установленные в определении записи \ops{robot}:
+\begin{lstlisting}[style=erlang]
+car_factory(CorpName) ->
+    #robot{name=CorpName, hobbies="building cars"}.
+\end{lstlisting}
+
+И запускаем:
+\begin{lstlisting}[style=erlang]
+5> c(records).
+{ok,records}
+6> records:car_factory("Jokeswagen").
+#robot{name = "Jokeswagen",type = industrial,
+    hobbies = "building cars",details = []}
+\end{lstlisting}
+
+Теперь у нас есть промышленный робот, который любит заниматься постройкой машин.
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:}  функция \ops{rr()} может принимать не только имя модуля, но и шаблоны (вида \ops{rr(''*'')}) и список загружаемых записей вторым аргументом.
+
+    В оболочке есть ещё несколько функций, с помощью которых можно манипулировать записями: \ops{rd(Name, Definition) позволяет определять запись способом похожим на \ops{-record(Name, Definition)}, который мы использовали в нашем модуле.
+    Команду \ops{rf()} можно использовать для <<выгрузки>> всех записей, а \ops{rf(Name)} и \ops{rf([Names])} \--- чтобы избавиться только от указанных определений.
+
+    Можно использовать команду \ops{rl()} для печати всех определённых записей в готовом для копирования в модуль виде, или её формы \ops{rl(Name)} и \ops{rl([Names])} для вывода указанных записей.
+
+    И, наконец, команда \ops{rp(Term)} конвертирует кортеж в запись (при условии, что запись пределена).
+\end{minipage}
+}
+
+Но на одних записях далеко не уедешь.
+Нужно уметь извлекать из них значения.
+Делается это двумя способами.
+Первый \--- специальный <<точечный синтаксис>>.
+Представим, что определение записи о роботе уже загружено:
+\begin{lstlisting}[style=erlang]
+5> Crusher = #robot{name="Crusher", hobbies=["Crushing people","petting cats"]}.
+#robot{name = "Crusher",type = industrial,
+    hobbies = ["Crushing people","petting cats"],
+    details = []}
+6> Crusher#robot.hobbies.
+["Crushing people","petting cats"]
+\end{lstlisting}
+
+Синтаксис красотой не блещет.
+Он такой потому, что записи по природе своей \--- кортежи.
+Не более чем трюк компилятора.
+Из\--за этого приходится хранить ключевые слова, которые определяют, к которой переменной относится запись. Именно поэтому \ops{\#robot} \--- часть \ops{Crusher\#robot.hobbies}.
+Всё это, конечно, печально, но ничего не поделаешь.
+Вложенные записи выглядят ещё уродливее:
+\begin{lstlisting}[style=erlang]
+7> NestedBot = #robot{details=#robot{name="erNest"}}.
+#robot{name = undefined,type = industrial,
+    hobbies = undefined,
+    details = #robot{name = "erNest",type = industrial,
+                    hobbies = undefined,details = []}}
+8> (NestedBot#robot.details)#robot.name.
+"erNest"
+\end{lstlisting}
+
+И да, скобки обязательны.
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Дополнение:} \\ 
+    Начиная с ревизии R14A появилась возможность записывать вложенные записи без скобок.
+    Вышеприведённый пример \emph{NestedBot} можно также записать как \ops{NestedRobot\#robot.details\#robot.name}.
+    Работать эта запись будет так же.
+\end{minipage}
