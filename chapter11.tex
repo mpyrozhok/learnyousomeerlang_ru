@@ -11,7 +11,7 @@
 Но мы совсем не рассматривали другие структуры данных, которые предоставляет программисту стандартная библиотека Erlang.
 \section{Записи}
 \label{records}
-\begin{wrapfigure}{r}{0.35\linewidth}
+\begin{wrapfigure}{r}{0.2\linewidth}
     \includegraphics[width=1\linewidth]{record-player.png}
 \end{wrapfigure}
 Прежде всего, записи \--- это хак.
@@ -31,9 +31,9 @@
                  details=[]}).
 \end{lstlisting}
 
-Эта запись представляет информацию о роботах и имеет 4 поля: имя, тип, хобби и подробности.
-Для типа и подробностей, кроме того, задано значение по умолчанию: соответственно \ops{industrial} и \ops{[]}.
-Вот так можно объявить запись в модуле \href{http://learnyousomeerlang.com/static/erlang/records.erl}{records}:
+Эта запись представляет информацию о роботе и имеет 4 поля: имя, тип робота, его хобби и подробности.
+Для полей, хранящих тип и подробности, кроме того, задано значение по умолчанию: соответственно \ops{industrial} и \ops{[]}.
+Вот так в модуле \href{http://learnyousomeerlang.com/static/erlang/records.erl}{records} можно объявить запись:
 \begin{lstlisting}[style=erlang]
 first_robot() ->
     #robot{name="Mechatron",
@@ -49,9 +49,10 @@ first_robot() ->
 {robot,"Mechatron",handmade,undefined,
     ["Moved by a small man inside"]}
 \end{lstlisting}
+
 Опа!
 Вот и хак!
-Записи в Erlang \--- это всего лишь синтаксический сахар поверх кортежей.
+Записи в Erlang \--- всего лишь синтаксический сахар поверх кортежей.
 К счастью, ситуацию можно улучшить.
 В оболочке Erlang есть команда \ops{rr(Module)}, которая позволяет загружать определения записей из \emph{Module}:
 \begin{lstlisting}[style=erlang]
@@ -83,16 +84,16 @@ car_factory(CorpName) ->
     hobbies = "building cars",details = []}
 \end{lstlisting}
 
-Теперь у нас есть промышленный робот, который любит заниматься постройкой машин.
+Теперь у нас есть промышленный робот, который любит заниматься постройкой машин.\\
 \colorbox{lgray}
 {
 \begin{minipage}{1.0\linewidth}
     \textbf{Замечание:}  функция \ops{rr()} может принимать не только имя модуля, но и шаблоны (вида \ops{rr(''*'')}) и список загружаемых записей вторым аргументом.
 
-    В оболочке есть ещё несколько функций, с помощью которых можно манипулировать записями: \ops{rd(Name, Definition) позволяет определять запись способом похожим на \ops{-record(Name, Definition)}, который мы использовали в нашем модуле.
+    В оболочке есть ещё несколько функций, с помощью которых можно манипулировать записями: \ops{rd(Name, Definition)} позволяет определять запись способом похожим на \ops{-record(Name, Definition)}, который мы использовали в нашем модуле.
     Команду \ops{rf()} можно использовать для <<выгрузки>> всех записей, а \ops{rf(Name)} и \ops{rf([Names])} \--- чтобы избавиться только от указанных определений.
 
-    Можно использовать команду \ops{rl()} для печати всех определённых записей в готовом для копирования в модуль виде, или её формы \ops{rl(Name)} и \ops{rl([Names])} для вывода указанных записей.
+    Можно использовать команду \ops{rl()} для вывода определений всех записей в виде пригодном для непосредственного копирования в модуль, или её формы \ops{rl(Name)} и \ops{rl([Names])} для вывода лишь указанных записей.
 
     И, наконец, команда \ops{rp(Term)} конвертирует кортеж в запись (при условии, что запись пределена).
 \end{minipage}
@@ -101,7 +102,7 @@ car_factory(CorpName) ->
 Но на одних записях далеко не уедешь.
 Нужно уметь извлекать из них значения.
 Делается это двумя способами.
-Первый \--- специальный <<точечный синтаксис>>.
+Первый \--- специальный <<синтаксис с точкой>>.
 Представим, что определение записи о роботе уже загружено:
 \begin{lstlisting}[style=erlang]
 5> Crusher = #robot{name="Crusher", hobbies=["Crushing people","petting cats"]}.
@@ -113,10 +114,10 @@ car_factory(CorpName) ->
 \end{lstlisting}
 
 Синтаксис красотой не блещет.
-Он такой потому, что записи по природе своей \--- кортежи.
-Не более чем трюк компилятора.
-Из\--за этого приходится хранить ключевые слова, которые определяют, к которой переменной относится запись. Именно поэтому \ops{\#robot} \--- часть \ops{Crusher\#robot.hobbies}.
-Всё это, конечно, печально, но ничего не поделаешь.
+Он выглядит так потому, что записи по природе своей \--- кортежи.
+Не более чем уловка компилятора.
+Поэтому для записи приходится хранить ключевые слова, которые определяют, к какой переменной она относится. Именно поэтому \ops{\#robot} \--- часть \ops{Crusher\#robot.hobbies}.
+Всё это, конечно, печалит, но ничего не поделаешь.
 Вложенные записи выглядят ещё уродливее:
 \begin{lstlisting}[style=erlang]
 7> NestedBot = #robot{details=#robot{name="erNest"}}.
@@ -128,12 +129,135 @@ car_factory(CorpName) ->
 "erNest"
 \end{lstlisting}
 
-И да, скобки обязательны.
+И да, скобки обязательны.\\
 \colorbox{lgray}
 {
 \begin{minipage}{1.0\linewidth}
     \textbf{Дополнение:} \\ 
     Начиная с ревизии R14A появилась возможность записывать вложенные записи без скобок.
     Вышеприведённый пример \emph{NestedBot} можно также записать как \ops{NestedRobot\#robot.details\#robot.name}.
-    Работать эта запись будет так же.
+    Работать такая запись будет аналогично.
 \end{minipage}
+}
+
+Рассмотрим следующий пример, чтобы глубже обозначить зависимость записей от кортежей:
+\begin{lstlisting}[style=erlang]
+9> #robot.type.
+3
+\end{lstlisting}
+
+Код выводит номер элемента кортежа, который реализует данное поле.
+
+У записей есть одна оправдывающая их особенность \--- записи можно использовать в заголовках функции для сопоставления с образцом, а также в охранных выражениях.
+Определите в начале файла новую запись, и добавьте несколько функций:
+\begin{lstlisting}[style=erlang]
+-record(user, {id, name, group, age}).
+ 
+%% use pattern matching to filter
+admin_panel(#user{name=Name, group=admin}) ->
+    Name ++ " is allowed!";
+admin_panel(#user{name=Name}) ->
+    Name ++ " is not allowed".
+ 
+%% can extend user without problem
+adult_section(U = #user{}) when U#user.age >= 18 ->
+    %% Show stuff that can't be written in such a text
+    allowed;
+adult_section(_) ->
+    %% redirect to sesame street site
+    forbidden.
+\end{lstlisting}
+
+В функции \ops{admin\_panel/1} показан синтаксис, который позволяет связывать переменную с любым полем записи (можно связывать переменные сразу с несколькими полями).
+Следует отметить, что для связывания целой записи с переменной в функции \ops{adult\_section/1}, необходимо выполнить код \ops{SomeVar = \#some\_record\{\}}.
+И, как обычно, скомпилировать:
+\begin{lstlisting}[style=erlang]
+10> c(records).
+{ok,records}
+11> rr(records).
+[robot,user]
+12> records:admin_panel(#user{id=1, name="ferd", group=admin, age=96}).
+"ferd is allowed!"
+13> records:admin_panel(#user{id=2, name="you", group=users, age=66}).
+"you is not allowed"
+14> records:adult_section(#user{id=21, name="Bill", group=users, age=72}).
+allowed
+15> records:adult_section(#user{id=22, name="Noah", group=users, age=13}).
+forbidden
+\end{lstlisting}
+
+На этом примере можно увидеть, что нет необходимости делать сопоставление по всем элементам кортежа, или вообще иметь во время написания функции представление о количестве этих элементов.
+Можно провести сопоставление только по возрасту или группе, а об остальных полях даже и не вспоминать.
+Если бы нам пришлось использовать обычный кортеж, то определение функции выглядело бы приблизительно так: \ops{function(\{record, \_, \_, ICareAboutThis, \_, \_\}) -> \ldots}.
+Как только кто\--либо решит добавить в кортеж новый элемент, кто\--то другой (скорее всего весьма недовольный этой ситуацией) будет обязан исправить все функции, в которых используется этот кортеж.
+
+Эта функция показывает как обновлять запись (иначе пользы от них было бы мало):
+\begin{lstlisting}[style=erlang]
+repairman(Rob) ->
+    Details = Rob#robot.details,
+    NewRob = Rob#robot{details=["Repaired by repairman"|Details]},
+    {repaired, NewRob}.
+\end{lstlisting}
+
+А затем:
+\begin{lstlisting}[style=erlang]
+16> c(records).
+{ok,records}
+17> records:repairman(#robot{name="Ulbert", hobbies=["trying to have feelings"]}).
+{repaired,#robot{name = "Ulbert",type = industrial,
+    hobbies = ["trying to have feelings"],
+    details = ["Repaired by repairman"]}}
+\end{lstlisting}
+
+Как видите, моего робота починили.
+Здесь для обновления записей используется особенный синтаксис.
+Может показаться, что мы обновляем ту же самую запись (\ops{Rob\#robot\{Field=NewValue\}}), но на самом деле это просто уловки компилятора, которые маскируют скрытый вызов функции \ops{\href{http://erldocs.com/R15B/erts/erlang.html\#setelement/3}{erlang:setelement/3}}.
+
+И последнее о записях.
+Записи весьма полезны, а дублирование кода не очень.
+Поэтому программисты на Erlang часто совмещают использование одних и тех же записей в нескольких модулях при помощи \emph{заголовочных файлов}.
+Файл заголовков в Erlang очень похож на их аналог в языке C.
+Это просто фрагмент кода, который добавляется в модуль, как будто он там был всегда.
+Создайте файл \href{http://learnyousomeerlang.com/static/erlang/records.hrl}{records.hrl} и добавьте в него следующий код:
+\begin{lstlisting}[style=erlang]
+%% this is a .hrl (header) file.
+-record(included, {some_field,
+                  some_default = "yeah!",
+                  unimaginative_name}).
+\end{lstlisting}
+
+Чтобы включить этот заголовок в \href{http://learnyousomeerlang.com/static/erlang/records.erl}{records.erl}, нужно просто добавить в модуль эту строчку:
+\begin{lstlisting}[style=erlang,]
+-include("records.hrl").
+\end{lstlisting}
+
+И в следующей функции применить запись:
+\begin{lstlisting}[style=erlang]
+included() -> #included{some_field="Some value"}.
+\end{lstlisting}
+
+А теперь, как обычно, проверим:
+\begin{lstlisting}[style=erlang]
+18> c(records).
+{ok,records}
+19> rr(records).
+[included,robot,user]
+20> records:included().
+#included{some_field = "Some value",some_default = "yeah!",
+         unimaginative_name = undefined}
+\end{lstlisting}
+
+Ура!
+Довольно о записях.
+Они, конечно,  неприятные, но полезные.
+У них некрасивый синтаксис, они реализованы при помощи хака, но они играют сравнительно важную роль в удобстве поддержки вашего кода.\\
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:} в проектах с открытым кодом вы сможете часто встретить описанный здесь метод.
+В проект добавляется \ops{.hrl} файл, содержащий записи, которые используются во всех модулях приложения.
+Хоть я и считаю, что обязан задокументировать этот способ использования записей, но я настоятельно рекомендую применять только локальные определения, которые действуют в пределах одного модуля.
+Если вам нужно, чтобы какой\--либо другой модуль имел доступ к внутренему устройству записи \--- напишите несколько функций, которые предоставляют доступ к полям, а подробности реализации сделайте как можно более закрытыми.
+Это правило позволяет предотвратить конфликт имён, помогает избежать проблем с обновлением кода, просто улучшает общую читабельность и упрощает поддержку вашего кода.
+\end{minipage}
+}
