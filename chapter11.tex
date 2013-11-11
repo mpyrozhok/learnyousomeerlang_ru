@@ -364,3 +364,30 @@ Orddict\--ы представляют собой неплохой компром
 Будьте внимательны.
     \end{minipage}
 }
+\section{Набор наборов}
+\label{a-set-of-sets}
+Если вам когда\--либо приходилось изучать теорию множеств, то у вас есть представление о свойствах наборов.
+Если не приходилось, то можете дальше не читать.
+Короче говоря, наборы \--- это группы уникальных элементов, которые можно сравнивать.
+Над ними также можно производить различные действия: найти элементы, которые одновременно принадлежат двум группам, или не принадлежат ни одной группе, или принадлежат лишь одной из групп и т.д.
+Можно также производить более сложные операции, которые позволяют определить связи между группами и совершать действия над этими связями и ещё много всего.
+Не буду погружаться в теорию (опять же, она выходит за рамки этой книги), а просто опишу наборы как они есть.
+\begin{wrapfigure}{r}{0.35\linewidth}
+    \includegraphics[width=1\linewidth]{swingset.png}
+\end{wrapfigure}
+
+В Erlang существует 4 главных модуля, предназначенных для работы с наборами.
+Поначалу это может показаться странным, но смысл такого решения становится понятен, если знать, как оно появилось.
+Разработчики решили, что <<лучшего>> способа реализации набора не существует.
+Вот эти четыре модуля: \href{http://erldocs.com/R15B/stdlib/ordets.html}{ordsets}, \href{http://erldocs.com/R15B/stdlib/sets.html}{sets}, \href{http://erldocs.com/R15B/stdlib/gb\_sets.html}{gb\_sets} и \href{http://erldocs.com/R15B/stdlib/sofs.html}{sofs} (наборы наборов):
+
+\begin{minipage}{1.0\linewidth}
+    \textbf{ordsets}\\
+    Ordset\--ы реализованы в виде упорядоченного списка.
+    Главным образом, их хорошо использовать для небольших наборов, и они \--- самый медленный вид набора.
+    Но из всех наборов они имеют самое простое и легкочитаемое представление.
+    Для них реализованы следующие стандартные функции: \ops{\href{http://erldocs.com/R15B/stdlib/ordsets.html\#new/0}{ordsets:new/0}}, \ops{\href{http://erldocs.com/R15B/stdlib/ordsets.html\#is\_element/2}{ordsets:is\_element/2}}, \ops{\href{http://erldocs.com/R15B/stdlib/ordsets.html\#add\_element/2}{ordsets:add\_element/2}}, \ops{\href{http://erldocs.com/R15B/stdlib/ordsets.html\#del\_element/2}{ordsets:del\_element/2}}, \ops{\href{http://erldocs.com/R15B/stdlib/ordsets.html\#union/1}{ordsets:union/1}}, \ops{\href{http://erldocs.com/R15B/stdlib/ordsets.html\#intersection/1}{ordsets:intersection/1}} и другие.\\
+    \blankline
+    \textbf{sets}\\
+
+\end{minipage}
