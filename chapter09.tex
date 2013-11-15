@@ -303,6 +303,7 @@ in function  hhfuns:add/2
 
 Во введении я сравнивал процессы с людьми, которые общаются посредством почты. К этой аналогии, в общем\--то, добавить нечего, поэтому перейду к диаграммам и кружкам.
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.4\textwidth]{a-b-msg.png}
 \end{figure}
 
@@ -310,6 +311,7 @@ in function  hhfuns:add/2
 Процесс также может ожидать прихода каких\--либо сообщений.
 Можно выбирать, какие сообщения нужно ждать, какие отклонять, а какие игнорировать, через какой период времени прекращать ожидание и т.д.
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.4\textwidth]{a-b-c-hello.png}
 \end{figure}
 
@@ -318,6 +320,7 @@ in function  hhfuns:add/2
 Другие процессы, которые ожидали этот вид сообщений, смогут узнать об этом событии и распорядиться этим знанием как угодно.
 Сделать запись в журнале, перезапустить умерший процесс и т.д.
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.4\textwidth]{a-b-dead.png}
 \end{figure}
 
@@ -700,6 +703,7 @@ has_value(Val, {node, {_, _, Left, Right}}) ->
 
 Проблема этой реализации в том, что для каждого узла, в котором мы делаем ветвление, нам необходимо проверять результат предыдущей ветки:
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.9\textwidth]{tree-case.png}
 \end{figure}
 
@@ -728,6 +732,7 @@ has_value1(Val, {node, {_, _, Left, Right}}) ->
 Обработка дерева прекращается в тот самый момент, когда происходит это событие, и исполнение переходит в верхний \ops{catch}.
 В противном случае исполнение продолжается до тех пор, пока не будет возвращён последний \emph{false}, и пользователь не увидит вот это:
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.9\textwidth]{tree-throw.png}
 \end{figure}
 

@@ -276,6 +276,7 @@ ok
 Перед посадкой вы решаете найти оптимальный путь, ведущий к дому, и, тем самым, максимизировать свои шансы.
 Вот карта, которую вы нашли при помощи своего лэптопа:
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.7\textwidth]{road1.png}
 \end{figure}
 
@@ -307,6 +308,7 @@ ok
 Для нашей задачи это ситуация, когда осталось проанализировать лишь один кортеж.
 То есть, сделать выбор между \emph{A, B} (и переулком \emph{x}, который в данном случае бесполезен, так как мы находимся в пункте назначения):
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.5\textwidth]{road2.png}
 \end{figure}
 
@@ -315,6 +317,7 @@ ok
 
 Расширим нашу карту и начнём заново:
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.5\textwidth]{road3.png}
 \end{figure}
 
@@ -338,6 +341,7 @@ ok
 До точки A мы можем добраться либо по пути \emph{A2} из \ops{[B, X]}, который даёт нам длину 14 (\ops{14 = 4 + 10}, либо по \emph{B2}, а затем \emph{X2} из точки \ops{[B]}, что даёт нам длину 16 (\ops{16 = 1 + 15 + 0}).
 Очевидно, что путь \ops{[B, X, A]} лучше пути \ops{[B, B, X]}.
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.7\textwidth]{road3_2.png}
 \end{figure}
 
@@ -452,6 +456,7 @@ parse_map(Str) when is_list(Str) ->
 К счастью, способ решения этой задачи нам уже известен, так как для него нам не понадобится аккумулятор, и всю необходимую логику мы уже записали.
 Итак, для A:
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.85\textwidth]{road1_2.png}
 \end{figure}
 
@@ -459,6 +464,7 @@ parse_map(Str) when is_list(Str) ->
 \clearpage
 Задача Для B имеет похожее решение:
 \begin{figure}[!htbp]
+    \centering
     \includegraphics[width=0.85\textwidth]{road1_3.png}
 \end{figure}
 
@@ -528,6 +534,7 @@ main() ->
 \end{lstlisting}
 
 \begin{figure}[h!]
+    \centering
     \includegraphics[width=0.7\textwidth]{road1_4.png}
 \end{figure}
 
