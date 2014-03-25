@@ -1,17 +1,21 @@
-all: learnyousomeerlang_ru.pdf ./images/*.png clean
+SRC_DIR := src/
+IMG_DIR := images/
+PDF_DIR := pdf/
+PDF_NAME := learnyousomeerlang_ru.pdf
+SRC_NAME := learnyousomeerlang_ru.tex
+TEXCMD := TEXINPUTS=src: pdflatex -interaction=batchmode -output-directory $(PDF_DIR)
+TEXCMDVERBOSE := TEXINPUTS=src: pdflatex -output-directory $(PDF_DIR)
 
-TEXCMD := pdflatex -interaction=batchmode
-TEXCMDVERBOSE := pdflatex
+all: $(PDF_NAME) $(IMG_DIR)*.png $(SRC_DIR)chapter*.tex clean
 
-learnyousomeerlang_ru.pdf: learnyousomeerlang_ru.tex chapter*.tex
-	$(TEXCMD) learnyousomeerlang_ru.tex
+$(PDF_NAME): $(SRC_DIR)$(SRC_NAME) $(SRC_DIR)chapter*.tex
+	$(TEXCMD) $(SRC_DIR)$(SRC_NAME) $(SRC_DIR)chapter*.tex
 
-ref: learnyousomeerlang_ru.tex chapter*.tex clean
-	$(TEXCMD) learnyousomeerlang_ru.tex
-	$(TEXCMD) learnyousomeerlang_ru.tex
+ref: $(PDF_NAME)
+	$(TEXCMD) $(SRC_DIR)$(SRC_NAME)
 
-debug: learnyousomeerlang_ru.tex chapter*.tex
-	$(TEXCMDVERBOSE) learnyousomeerlang_ru.tex
+debug: $(SRC_DIR)$(SRC_NAME) $(SRC_DIR)chapter*.tex
+	$(TEXCMDVERBOSE) $(SRC_DIR)$(SRC_NAME)
 
 clean:
-	rm -f *.aux *.log *.out
+	rm -f $(PDF_DIR)*.aux $(PDF_DIR)*.log $(PDF_DIR)*.out
