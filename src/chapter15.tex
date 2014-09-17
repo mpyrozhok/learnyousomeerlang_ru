@@ -439,3 +439,220 @@ init(Server, EventName, DateTime) ->
 
 Всё, с этим закончили.
 Теперь можно сделать перерыв, создать новое событие, сходить выпить пинту (пол\--литра) молока/пива и вернуться точно к моменту, когда придёт сообщение о том, что событие наступило.
+\section{Сервер событий}
+\label{the-event-server}
+Теперь давайте разберёмся с \href{http://learnyousomeerlang.com/static/erlang/evserv.erl}{сервером событий}.
+Согласно протоколу, его каркас должен выглядеть приблизительно таким образом:
+\begin{lstlisting}[style=erlang]
+
+-module(evserv).
+-compile(export_all).
+ 
+loop(State) ->
+    receive
+        {Pid, MsgRef, {subscribe, Client}} ->
+            ...
+        {Pid, MsgRef, {add, Name, Description, TimeOut}} ->
+            ...
+        {Pid, MsgRef, {cancel, Name}} ->
+            ...
+        {done, Name} ->
+            ...
+        shutdown ->
+            ...
+        {'DOWN', Ref, process, _Pid, _Reason} ->
+            ...
+        code_change ->
+            ...
+        Unknown ->
+            io:format("Unknown message: ~p~n",[Unknown]),
+            loop(State)
+    end.
+\end{lstlisting}
+
+Вы можете заметить, что я завернул вызовы, которые требуют ответа, используя тот же формат \ops{\{Pid, Ref, Message\}}, который употреблялся ранее.
+Теперь серверу нужно будет хранить в состоянии две вещи: список подписавшихся клиентов и список всех запущенных процессов\--событий.
+Возможно, вы обратили внимание: в протоколе говорится, что когда наступает событие, сервер событий должен получать \ops{\{done, Name\}}, но посылать \ops{\{done, Name, Description\}}.
+Идея заключается в том, чтобы генерировать как можно меньше трафика, и позволять процессам\--событиям заниматься только самым необходимым.
+Да, вернёмся к списку клиентов и списку событий:
+\begin{lstlisting}[style=erlang]
+-record(state, {events,    %% list of #event{} records
+                clients}). %% list of Pids
+ 
+-record(event, {name="",
+        description="",
+        pid,
+        timeout={{1970,1,1},{0,0,0}}}).
+\end{lstlisting}
+
+Теперь в заголовке цикла у нас находится объявление записи (record definition):
+\begin{lstlisting}[style=erlang]
+loop(S = #state{}) ->
+    receive
+    ...
+    end.
+\end{lstlisting}
+
+Неплохо было бы задействовать для хранения и событий и клиентов упорядоченные словари (orddicts).
+Вряд ли их содержимое будет исчисляться многими сотнями.
+Вспоминая главу о \ref{key-value-stores} структурах данных, мы можем убедиться, что orddict-ы очень хорошо подходят для наших нужд.
+Для реализации этой функциональности мы напишем функцию \ops{init}:
+\begin{lstlisting}[style=erlang]
+init() ->
+    %% Loading events from a static file could be done here.
+    %% You would need to pass an argument to init telling where the
+    %% resource to find the events is. Then load it from here.
+    %% Another option is to just pass the events straight to the server
+    %% through this function.
+    loop(#state{events=orddict:new(),
+                clients=orddict:new()}).
+\end{lstlisting}
+
+С каркасом и инициализацией мы закончили.
+Теперь я запишу реализацию каждого сообщения по отдельности.
+Первое сообщение касается подписки.
+Мы хотим хранить список всех подписчиков для того, чтобы иметь возможность уведомить их о наступлении события.
+Также в описанном выше протоколе упоминается, что мы должны наблюдать (monitor) за подписчиками.
+В этом намерении есть рациональное зерно, так как хранить сведения о нерабочих клиентах и посылать без причины ненужные сообщения мы не хотим.
+Как бы то ни было, код должен выглядеть вот так:
+\begin{lstlisting}[style=erlang]
+{Pid, MsgRef, {subscribe, Client}} ->
+    Ref = erlang:monitor(process, Client),
+    NewClients = orddict:store(Ref, Client, S#state.clients),
+    Pid ! {MsgRef, ok},
+    loop(S#state{clients=NewClients});
+\end{lstlisting}
+
+\begin{wrapfigure}{l}{0.35\linewidth}
+    \includegraphics[width=1\linewidth]{rss.png}
+\end{wrapfigure}
+
+Эта часть функции \ops{loop/1} делает вот что: запускает монитор и сохраняет информацию о клиенте в orddict\--е, используя ключ \emph{Ref}.
+Мы поступаем так по простой причине: в следующий раз нам понадобится извлечь ID клиента, только если мы получим от монитора сообщение \ops{EXIT}, в котором будет содержаться ссылка (которая позволит нам избавиться от записи в orddict\--е).
+
+Следующее сообщение, которое может показаться нам интересным, позволяет добавлять события.
+Выполняя эту операцию, у нас есть возможность вернуть состояние ошибки.
+Контроль данных мы будем осуществлять только в одном месте \--- при проверке входящих временных меток (timestamps).
+Мы могли бы просто проверять входящие данные на соответствие шаблону \ops{\{\{Year,Month,Day\}, \{Hour,Minute,seconds\}\}}, но нам нужно убедиться, что мы не допустим, к примеру, событие, запланированное на 29 февраля невисокосного года, или не примем любую другую несуществующую дату.
+И тем более мы не хотим принимать даты, которые не могут существовать в принципе (пример такой даты: <<5 часов, минус 1 минута и 75 секунд>>).
+С проверкой всех этих условий можно справиться силами одной функции.
+
+Первым кирпичиком, которым мы воспользуемся, будет функция \href{http://erldocs.com/R15B/stdlib/calendar.html#valid\_date/1}{calendar:valid\_date/1}.
+Как можно догадаться по имени, эта функция проверяет дату на валидность.
+К сожалению, странности календарного модуля на чудн\'{ы}х именах не заканчиваются: в модуле не существует функции, которая может подтвердить, что кортеж \ops{\{H,M,S\}} содержит валидные значения.
+Придётся нам самим написать такую функцию, при этом следуя странным правилам именования, присущим календарному модулю:
+\begin{lstlisting}[style=erlang]
+valid_datetime({Date,Time}) ->
+    try
+        calendar:valid_date(Date) andalso valid_time(Time)
+    catch
+        error:function_clause -> %% not in {{Y,M,D},{H,Min,S}} format
+        false
+    end;
+valid_datetime(_) ->
+    false.
+ 
+valid_time({H,M,S}) -> valid_time(H,M,S).
+valid_time(H,M,S) when H >= 0, H < 24,
+                        M >= 0, M < 60,
+                        S >= 0, S < 60 -> true;
+valid_time(_,_,_) -> false.
+\end{lstlisting}
+
+Теперь можно воспользоваться функцией \ops{valid\_datetime/1} в том месте, где мы пытаемся добавить сообщение:
+\begin{lstlisting}[style=erlang]
+{Pid, MsgRef, {add, Name, Description, TimeOut}} ->
+    case valid_datetime(TimeOut) of
+        true ->
+            EventPid = event:start_link(Name, TimeOut),
+            NewEvents = orddict:store(Name,
+                                    #event{name=Name,
+                                        description=Description,
+                                        pid=EventPid,
+                                    timeout=TimeOut},
+                                    S#state.events),
+            Pid ! {MsgRef, ok},
+            loop(S#state{events=NewEvents});
+        false ->
+            Pid ! {MsgRef, {error, bad_timeout}},
+            loop(S)
+    end;
+\end{lstlisting}
+
+Если время сформировано верно, мы порождаем новый процесс\--событие, затем сохраняем его данные в состоянии сервера событий и посылаем вызывающему процессу подтверждение.
+Если тайм\--аут сформирован неверно, мы не позволяем ошибке пройти незамеченной, и не переводим сервер в аварийное состояние \--- вместо этого мы сообщаем об ошибке клиенту.
+Для обнаружения конфликта имён, или наложения каких\--либо других ограничений, можно ввести дополнительные проверки (главное, не забудьте сделать изменения в документации протокола!)
+
+Следующее сообщение, определённое в нашем протоколе, позволяет отменять событие.
+Отмена никогда не сможет пройти неудачно с точки зрения клиента, а потому и код будет попроще.
+Нужно просто проверить, существует  ли событие в записи (record) состояния процесса.
+Если оно там есть, мы используем функцию \ops{event:cancel/1} для остановки события, и отсылки сообщения ok.
+Если событие не было найдено, мы всё равно говорим пользователю, что всё прошло хорошо \--- событие не запущено, а это именно то, что пользователь и хотел.
+\begin{lstlisting}[style=erlang]
+{Pid, MsgRef, {cancel, Name}} ->
+    Events = case orddict:find(Name, S#state.events) of
+                {ok, E} ->
+                    event:cancel(E#event.pid),
+                    orddict:erase(Name, S#state.events);
+                error ->
+                    S#state.events
+            end,
+    Pid ! {MsgRef, ok},
+    loop(S#state{events=Events});
+\end{lstlisting}
+
+Неплохо, неплохо.
+Теперь нами покрыты все произвольные действия, которые может инициировать клиент по отношению к серверу событий.
+Давайте займёмся тем, что происходит непосредственно между сервером и событиями.
+Нам нужно обрабатывать два сообщения: отмена событий (это мы уже сделали), и превышение лимита времени (timing out) для событий.
+Это сообщение выглядит просто как \ops{\{done, Name\}}:
+\begin{lstlisting}[style=erlang]
+{done, Name} ->
+    case orddict:find(Name, S#state.events) of
+        {ok, E} ->
+            send_to_clients({done, E#event.name, E#event.description},
+                            S#state.clients),
+            NewEvents = orddict:erase(Name, S#state.events),
+            loop(S#state{events=NewEvents});
+        error ->
+            %% This may happen if we cancel an event and
+            %% it fires at the same time
+            loop(S)
+    end;
+\end{lstlisting}
+
+А функция \ops{send\_to\_clients/2} делает именно то, о чём говорит её имя, и определяется следующим образом:
+\begin{lstlisting}[style=erlang]
+send_to_clients(Msg, ClientDict) ->
+    orddict:map(fun(_Ref, Pid) -> Pid ! Msg end, ClientDict).
+\end{lstlisting}
+
+С большей частью кода цикла мы закончили.
+Осталось записать код обработки различных сообщений, меняющих состояние: клиент прекращает работу, остановка, апгрейд кода и т.д.
+Вот как они реализованы:
+\begin{lstlisting}[style=erlang]
+shutdown ->
+    exit(shutdown);
+{'DOWN', Ref, process, _Pid, _Reason} ->
+    loop(S#state{clients=orddict:erase(Ref, S#state.clients)});
+code_change ->
+    ?MODULE:loop(S);
+Unknown ->
+    io:format("Unknown message: ~p~n",[Unknown]),
+    loop(S)
+\end{lstlisting}
+
+Обработка первого сообщения (\ops{shutdown}) довольно очевидна.
+Вы получаете сообщение о прекращении работы, после чего позволяете процессу умереть.
+Если бы вы захотели сохранить состояние на диск, это место неплохо подошло бы для осуществления такой задачи.
+Если бы вам понадобилась более безопасная семантика сохранения/выхода, то её можно обеспечить при раздельной обработке каждого сообщения \ops{add}, \ops{cancel} или \ops{done}.
+А загрузку событий с диска можно было бы производить в функции \ops{init}, запуская процессы\--события по мере их появления.
+
+Действия, производимые для сообщения <<\ops{DOWN}>> также достаточно просты.
+Получение этого сообщения означает, что клиент умер, а значит мы просто убираем его из списка клиентов, который хранится в состоянии процесса.
+
+Неизвестные сообщения просто будут отображаться при помощи \ops{io:format/2} для тладочных целей.
+Нужно учитывать, что в настоящем рабочем приложении, лучше использовать отдельный модуль логирования.
+
+Ну и напоследок рассмотрим сообщение для изменения кода.
+Мне оно кажется достаточно интересным для того, чтобы посвятить ему целый раздел.
