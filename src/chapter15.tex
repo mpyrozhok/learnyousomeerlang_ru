@@ -823,13 +823,13 @@ listen(Delay) ->
 \end{wrapfigure}
 
 Если открыть командную строку и запустить \ops{erl -make}, все файлы будут скомпилированы, и результат окажется в директории \ops{ebin/}.
-Откройте  оболочку Erlang командой \ops{erl -pa ebin/}.
+Откройте оболочку Erlang командой \ops{erl -pa ebin/}.
 Опция \ops{-pa <directory>} сообщает виртуальной машине Erlang, что этот путь необходимо учитывать при поиске модулей.
 
 Можно также запустить оболочку в обычном порядке и исполнить \ops{make:all([load])}.
 Этот вызов разыщет файл <<Emakefile>> в текущей директории, проведёт его рекомпиляцию (если файл был изменён) и загрузит новые файлы.
 
-Теперь вы сможете отслеживать тысячи событий (просто замените переменные \emph{DateTime} на любые подходящие значения, которые имеют смысл на момент написания вами текста): 
+Теперь вы сможете отслеживать тысячи событий (просто замените переменные \emph{DateTime} на любые подходящие значения, которые имеют смысл на текущий момент): 
 \begin{lstlisting}[style=erlang]
 1> evserv:start().
 <0.34.0>
@@ -849,3 +849,66 @@ ok
 
 Славно славно славно.
 Теперь с помощью созданных нами базовых функций интерфейса, написание клиента должно стать довольно простой задачей.
+\section{Добавляем слежение}
+\label{adding-supervision}
+Для того, чтобы сделать наше приложение более стабильным, мы должны написать ещё один 'перезапускатель'(restarter), наподобие того, что мы написали в \ref{naming-process} предыдущей главе.
+Открывайте файл \href{http://learnyousomeerlang.com/static/erlang/sup.erl}{sup.erl}, именно в нём будет располагаться наш супервизор:
+\begin{lstlisting}[style=erlang]
+-module(sup).
+-export([start/2, start_link/2, init/1, loop/1]).
+ 
+start(Mod,Args) ->
+    spawn(?MODULE, init, [{Mod, Args}]).
+ 
+start_link(Mod,Args) ->
+    spawn_link(?MODULE, init, [{Mod, Args}]).
+ 
+init({Mod,Args}) ->
+    process_flag(trap_exit, true),
+    loop({Mod,start_link,Args}).
+ 
+loop({M,F,A}) ->
+    Pid = apply(M,F,A),
+    receive
+        {'EXIT', _From, shutdown} ->
+            exit(shutdown); % will kill the child too
+        {'EXIT', Pid, Reason} ->
+            io:format("Process ~p exited for reason ~p~n",[Pid,Reason]),
+            loop({M,F,A})
+    end.
+\end{lstlisting}
+
+Что\--то похожее мы уже видели в 'перезапускателе', хотя этот код чуть более обобщён и может принимать любой модуль, в котором определена функция \ops{start\_link}.
+Процесс, за которым ведётся наблюдение, будет перезапускаться бесконечно, только если сам супервизор не прекратит работу, сгенерировав сигнал выхода.
+Вот как можно использовать этот код:
+\begin{lstlisting}[style=erlang]
+1> c(evserv), c(sup).
+{ok,sup}
+2> SupPid = sup:start(evserv, []).
+<0.43.0>
+3> whereis(evserv).
+<0.44.0>
+4> exit(whereis(evserv), die).
+true
+Process <0.44.0> exited for reason die
+5> exit(whereis(evserv), die).
+Process <0.48.0> exited for reason die
+true
+6> exit(SupPid, shutdown).
+true
+7> whereis(evserv).
+undefined
+\end{lstlisting}
+
+Как видите, убийство супервизора также повлечёт смерть его дочернего процесса.
+
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:} мы ознакомимся с более совершенными и гибкими супервизорами в главе о супервизорах OTP.
+    Именно их имеют в виду люди, когда говорят о \emph{деревьях контроля (supervision trees)}.
+    Здесь мною была показана самая простая форма супервизора, какая только может существовать.
+    Она не вполне подходит для использования в рабочем окружении, и не выдерживает сравнения с настоящими супервизорами.
+
+\end{minipage}
+}
