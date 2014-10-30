@@ -1,5 +1,7 @@
 \chapter{Снова о многопроцессорности}
+\label{more-on-multiprocessing}
 \section{Предъявите ваше состояние}
+\label{state-your-state}
 \begin{wrapfigure}{r}{0.35\linewidth}
     \includegraphics[width=1\linewidth]{turkey.png}
 \end{wrapfigure}
@@ -283,6 +285,7 @@ flush() ->
 Функция \ops{flush/0} будет рекурсивно вызывать себя до тех пор, пока в почтовом ящике не закончатся сообщения.
 Когда ящик будет опустошён, выполнится код \ops{after 0 -> ok}, и функция завершит выполнение.
 \section{Выборочный приём сообщений}
+\label{selective-receives}
 Рассмотренная  концепция <<сброса>> (flushing) позволяет реализовать \emph{выборочный приём сообщений}, который даёт возможность назначать приоритет полученным сообщениям при помощи вложенных вызовов:
 \begin{lstlisting}[style=erlang]
 important() ->
