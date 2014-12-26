@@ -1,0 +1,319 @@
+\chapter{Клиенты и серверы}
+\label{clients-and-servers}
+\section{Обратный вызов в будущее}
+\label{callback-to-the-future}
+\begin{wrapfigure}{l}{0.35\linewidth}
+    \includegraphics[width=1\linewidth]{cbttf.png}
+\end{wrapfigure}
+Первым шаблоном поведения, который мы рассмотрим, будет самый часто используемый.
+Его имя \ops{gen\_server} и его интерфейс немного схож с тем, что мы записали для \ops{my\_server} в предыдущей главе \ref{the-basic-server}. Он предоставляет вам в пользование несколько функций, а взамен ваш модуль должен содержать несколько функций, которыми воспользуется \ops{gen\_server}.
+\subsection{Инициализация}
+\label{init}
+Первая функция \--- \href{http://erldocs.com/R15B/stdlib/gen\_server.html#init/1}{init/1}.
+Она похожа на функцию, которую мы создавали  для \ops{my\_server}, тем, что её можно использовать для инициализации состояния сервера, и исполнения всех одноразовых задач, от которых эта инициализация будет зависеть.
+Функция может возвращать \ops{\{ok, State\}}, \ops{\{ok, State, TimeOut\}}, \ops{\{ok, State, hibernate\}}, \ops{\{stop, Reason\}} или \ops{ignore}.
+
+Значение \ops{\{ok, State\}}, которое возвращается в случае успеха, в подробном объяснении не нуждается.
+Нужно лишь сказать, что \emph{State} будет передан прямо в главный цикл процесса, в качестве состояния, которое необходимо сохранить и использовать позже.
+Переменную \emph{TimeOut} нужно добавлять в кортеж, когда вам необходимо установить конечный срок, в течение которого вы ожидаете, что сервер получит сообщение.
+Если до указанного момента сообщение не получено, серверу высылается особое сообщение (атом \ops{timeout}), который должен быть обработан функцией \href{http://erldocs.com/R15B/stdlib/gen\_server.html#handle\_info/2}{handle\_info/2} (об этом чуть позже).
+
+Но если вы, напротив, ожидаете, что пройдёт много времени перед тем, как придёт ответ, и переживаете, что на протяжении всего временного отрезка память будет занята без толку, вы можете добавить в кортеж атом \ops{hibernate}.
+Хибернация, по сути, уменьшает размер состояния процесса до получения сообщения, жертвуя при этом некоторым количеством вычислительных ресурсов.
+Если вы не уверены, стоит ли вам использовать хибернацию, то вам она, скорее всего ни к чему.
+
+Кортеж \ops{\{stop, Reason\}} нужно возвращать, когда во время инициализации что\--то пошло не по плану.
+
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:} вот более техническое определение хибернации процессов.
+    Нет ничего страшного в том, что кто\--то из читателей его не поймёт, или не найдёт его полезным.
+    Когда вызывается встроеная функция \href{http://erldocs.com/R15B/erts/erlang.html\#hibernate/3}{erlang:hibernate(M,F,A)}, стек вызовов для исполняемого процесса выбрасывается (функция никогда не завершается).
+    Запускается сборка мусора, и после её окончания остаётся одно непрерывное пространство кучи (heap), уменьшенное до размера данных, которые использует процесс.
+    По сути, эта процедура просто уплотняет все данные, чтобы уменьшить пространство, которое занимает процесс.
+
+    Как только процесс получит сообщение, будет вызвана функция \ops{M:F} с \emph{A} в качестве аргумента, и процесс продолжит выполняться.
+\end{minipage}
+}
+
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:} на то время, пока работает функция \ops{init/1}, блокируется процесс, выполняющий запуск сервера.
+    Этот простой возникает из\--за того, что процесс ожидает сообщение 'ready', которое автоматически высылается модулем \ops{gen\_server}, как подтверждение того, что всё прошло нормально.
+\end{minipage}
+}
+
+\subsection{handle\_call}
+\label{handle-call}
+Функция \href{http://erldocs.com/R15B/stdlib/gen\_server.html#handle\_call/3}{handle\_call/3} используется для работы с синхронными сообщениями (мы скоро увидим, как их можно отсылать).
+Она принимает 3 аргумента: \emph{Request}, \emph{From} и \emph{State}.
+Очень похоже на то, как мы запрограммировали нашу собственную функцию \ops{handle\_call/3} в \ops{my\_server}.
+Самое большое отличие заключается в том, как мы отвечаем на сообщения.
+В нашем собственноручно изготовленном обобщённом сервере, для общения с процессом нужно было использовать \ops{my\_server:reply/2}.
+А для \ops{gen\_server} можно возвращать 8 различных значений, которые заключаются в кортежи.
+Сообщений этих немало, поэтому я приведу здесь их перечень:
+\begin{lstlisting}[style=erlang]
+{reply,Reply,NewState}
+{reply,Reply,NewState,Timeout}
+{reply,Reply,NewState,hibernate}
+{noreply,NewState}
+{noreply,NewState,Timeout}
+{noreply,NewState,hibernate}
+{stop,Reason,Reply,NewState}
+{stop,Reason,NewState}
+\end{lstlisting}
+Для всех этих сообщений \emph{Timeout} и \ops{hibernate} будут выполнять те же функции, что и для \ops{init/1}.
+Что бы ни находилось в \emph{Reply}, его содержимое будет отослано тому, кто совершил вызов к серверу.
+Обратите внимание, что существует три возможных варианта \ops{noreply}.
+Когда вы используете \ops{noreply}, общая часть сервера будет предполагать, что вы сами позаботитесь об отсылке ответного сообщения.
+Эту операцию можно совершить при помощи вызова \href{http://erldocs.com/R15B/stdlib/gen\_server.html#reply/2}{gen\_server:reply/2}, который можно использовать в том же порядке, что и \ops{my\_server:reply/2}.
+
+В большинстве случаев вы будете использовать только кортежи \ops{reply}.
+Но для использования \ops{noreply} всё же можно найти несколько веских причин.
+Его стоит использовать, если вы хотите отослать ответ из другого процесса, или если вам нужно отослать подтверждение (<<Эй! Я получил сообщение!>>), но отложить обработку принятого собщения на потом (на этот раз уже без отсылки ответа), и т.д.
+Если вам необходимо совершить такие действия, то вам точно придётся использовать \ops{gen\_server:reply/2}, так как при использовании другой функции вызов отвалится по тайм\--ауту и станет причиной аварийной ситуации. 
+\subsection{handle\_cast}
+\label{handle-cast}
+Принцип работы функции обратного вызова (callback) \href{http://erldocs.com/R15B/stdlib/gen\_server.html#handle\_cast/2}{handle\_cast/2} очень похож на одну из функций, написанных нами для \ops{my\_server}.
+Она принимает в качестве параметров \emph{Message} и \emph{State}, и используется для обработки асинхронных вызовов.
+В ней можно делать что угодно, и в этом её поведение весьма похоже на \ops{handle\_call/3}.
+Но есть одно отличие: из этой функции можно возвращать только кортежи без ответного сообщения:
+\begin{lstlisting}[style=erlang]
+{noreply,NewState}
+{noreply,NewState,Timeout}
+{noreply,NewState,hibernate}
+{stop,Reason,NewState}
+\end{lstlisting}
+\subsection{handle\_info}
+\label{hande-info}
+Помните, я упоминал о том, что наш сервер игнорировал сообщения, не соответствующие нашему интерфейсу?
+Так вот, вызов \href{http://erldocs.com/R15B/stdlib/gen\_server.html#handle\_info/2}{handle\_info/2} решает эту проблему.
+Он очень похож на функцию \ops{handle\_cast/2} и возвращает кортежи того же вида.
+Отличие состоит в том, что эта функция обратного вызова работает только для сообщений, посланных напрямую при помощи оператора \ops{!} и особенных функций, таких как \ops{timeout} в \ops{init/1}, уведомлений мониторов и сигналов \ops{'EXIT'}.
+\subsection{terminate}
+\label{terminate}
+Функция обратного вызова \href{http://erldocs.com/R15B/stdlib/gen\_server.html#terminate/2}{terminate/2} вызывается, если одна из трёх функций вида \ops{handle\_Нечто} возвращает кортеж вида \ops{\{stop, Reason, NewState\}}, или \ops{\{stop, Reason, Reply, NewState\}}.
+Она принимает два параметра: \emph{Reason} и \emph{State}, которые соответствуют тем же значениям из кортежей \ops{stop}.
+
+Функция \ops{terminate/2} также будет вызываться, когда родитель (процесс, который её породил), умирает, но лишь в том случае, если \ops{gen\_server} захватывает завершения (trapping exits).
+
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:} если для вызова \ops{terminate/2} используется причина, не входящая в число \ops{normal}, \ops{shutdown} или \ops{\{shutdown, Term\}}, то фреймворк OTP расценит этот вызов как аварийную ситуацию и сделает об этом несколько записей в журнале.
+\end{minipage}
+}
+
+Эта функция \--- прямая противоположность \ops{init/1}, поэтому в \ops{terminate/2} должно содержаться обратное действие для каждого действия из \ops{init/1}.
+Эта функция выполняет для вашего сервера функции уборщика, который запирает двери, убедившись, что все ушли. 
+Конечно, этой функции помогает сама виртуальная машина, которая обычно удаляет за вас все \href{http://erldocs.com/R15B/stdlib/ets.html}{ETS таблицы}, закрывает все \href{http://www.erlang.org/doc/tutorial/c\_port.html}{порты} и т.д.
+Заметьте, что значение, возвращаемое функцией, не так уж и важно, так как после её вызова останавливается выполнение кода.
+\subsection{code\_change}
+\label{code-change}
+Функция \href{http://erldocs.com/R15B/stdlib/gen\_server.html#code\_change/3}{code\_change/3} позволяет вам производить модернизацию (upgrade) кода.
+Её сигнатура имеет вид \ops{code\_change(PreviousVersion, State, Extra)}.
+Переменная \emph{PreviousVersion} содержит терм, описывающий версию, если производится модернизация (если вы не помните, что это такое, перечитайте раздел \ref{more-about-modules}), или кортеж \ops{\{down, Version\}}, если производится понижение версии (downgrade) (загрузка более старого кода).
+Переменная \emph{State} содержит всё текущее состояние сервера, готовое для приведения к виду, подходящему для новой версии кода.
+
+Представьте, что для хранения всех наших данных мы использовали orddict.
+Но с течением времени orddict сильно замедляется, и мы решаем  поменять его на обычный dict.
+Чтобы избежать краха процесса при следующем вызове функции, мы можем безопасно произвести преобразование структур данных.
+Для этого лишь нужно вернуть новое состояние в кортеже \ops{\{ok, NewState\}}.
+\begin{wrapfigure}{r}{0.35\linewidth}
+    \includegraphics[width=1\linewidth]{kitty.png}
+\end{wrapfigure}
+
+О переменной \emph{Extra} мы пока переживать не будем.
+По большей части она используется при более масштабных развёртываниях OTP приложений, в которых используются специальные инструменты, позволяющие производить в виртуальной машине полную модернизацию релизов.
+Но мы пока к этому не готовы.
+
+Итак, мы определили все обратные вызовы.
+Не переживайте, если вы немного запутались: в фреймворке OTP иногда приходится ходить кругами.
+Чтобы понять раздел \emph{A}, вы должны понимать раздел \emph{B}, но для успешного использования раздела \emph{B} необходимо иметь понятие о разделе \emph{A}. 
+Выйти из этого состояния замешательства проще всего, реализовав gen\_server своими руками.
+\section{\href{https://en.wikipedia.org/wiki/Beam\_me\_up,\_Scotty}{.BEAM me up, Scotty!}}
+\label{beam-me-up-scotty}
+Сейчас мы займёмся \href{http://learnyousomeerlang.com/static/erlang/kitty_gen_server.erl}{kitty\_gen\_server}.
+В основном он будет похож на \ops{kitty\_server2}, с минимальными изменениями в API.
+Для начала создайте новый модуль, и поместите в него следующие строки:
+\begin{lstlisting}[style=erlang]
+-module(kitty_gen_server).
+-behaviour(gen_server).
+\end{lstlisting}
+Теперь попробуйте его скомпилировать.
+У вас должно получиться что\--то вроде этого:
+\begin{lstlisting}[style=erlang]
+1> c(kitty_gen_server).
+./kitty_gen_server.erl:2: Warning: undefined callback function code_change/3 (behaviour 'gen_server')
+./kitty_gen_server.erl:2: Warning: undefined callback function handle_call/3 (behaviour 'gen_server')
+./kitty_gen_server.erl:2: Warning: undefined callback function handle_cast/2 (behaviour 'gen_server')
+./kitty_gen_server.erl:2: Warning: undefined callback function handle_info/2 (behaviour 'gen_server')
+./kitty_gen_server.erl:2: Warning: undefined callback function init/1 (behaviour 'gen_server')
+./kitty_gen_server.erl:2: Warning: undefined callback function terminate/2 (behaviour 'gen_server')
+{ok,kitty_gen_server}
+\end{lstlisting}
+
+Компиляция прошла успешно, но мы получили предупреждения о пропущенных функциях обратного вызова.
+Возникли они из\--за стратегии поведения \ops{gen\_server}.
+Стратегия поведения, по сути, предоставляет модулю возможность указать те функции, которые он ожидает увидеть в другом модуле.
+Стратегия поведения \--- это контракт, заключённый между корректными частями кода и участками, которые могут содержать ошибки (вашим кодом).
+
+\colorbox{lgray}
+{
+\begin{minipage}{1.0\linewidth}
+    \textbf{Замечание:} обратите внимание, что компилятор Erlang допускает оба варианта написания: 'behavior' и 'behaviour'.
+\end{minipage}
+}
+
+Добавлять собственные стратегии поведения очень просто.
+Нужно лишь проэкспортировать функцию с именем \ops{behaviour\_info/1}, реализованную следующим образом:
+\begin{lstlisting}[style=erlang]
+-module(my_behaviour).
+-export([behaviour_info/1]).
+ 
+%% init/1, some_fun/0 and other/3 are now expected callbacks
+behaviour_info(callbacks) -> [{init,1}, {some_fun, 0}, {other, 3}];
+behaviour_info(_) -> undefined.
+\end{lstlisting}
+
+Вот, пожалуй, и всё, что можно сказать о стратегиях поведения.
+В модуле, который их будет реализовать, достаточно добавить строку \ops{-behaviour(my\_behaviour)}, чтобы получить предупреждение компилятора в случае, если вы забыли реализовать функцию.
+Вернёмся к третьей инкарнации нашего котосервера.
+
+Первой реализованной нами функцией была \ops{start\_link/0}.
+Её можно привести к следующему виду:
+\begin{lstlisting}[style=erlang]
+start_link() -> gen_server:start_link(?MODULE, [], []).
+\end{lstlisting}
+
+Первый параметр задаёт модуль обратного вызова, второй параметр содержит список параметров, которые нужно передать функции \ops{init/1}, а третий параметр определяет параметры отладки, которых мы сейчас касаться не будем.
+Также можно добавить первым по порядку \href{http://erldocs.com/R15B/stdlib/gen_server.html#start_link/4}{четвёртый параметр}, определяющий имя, под которым будет зарегистрирован сервер.
+Отметьте, что предыдущая версия функции просто возвращала pid, а эта возвращает кортеж \ops{\{ok, Pid\}}.
+А теперь остальные функции:
+\begin{lstlisting}[style=erlang]
+
+%% Synchronous call
+order_cat(Pid, Name, Color, Description) ->
+    gen_server:call(Pid, {order, Name, Color, Description}).
+ 
+%% This call is asynchronous
+return_cat(Pid, Cat = #cat{}) ->
+    gen_server:cast(Pid, {return, Cat}).
+ 
+%% Synchronous call
+close_shop(Pid) ->
+    gen_server:call(Pid, terminate).
+\end{lstlisting}
+
+Все эти функции перенесены один к одному.
+Обратите внимание, что \href{http://erldocs.com/R15B/stdlib/gen\_server.html#call/2}{gen\_server:call/2-3} можно передать третий параметр, который задаст величину тайм\--аута.
+Если тайм\--аут не указан (или указан атом \ops{infinity}), то по умолчанию задаётся значение равное 5 секундам.
+Если до истечения интервала не получен ответ, вызов завершится аварией.
+Теперь мы сможем добавить функции обратного вызова для gen\_server.
+Следующая таблица показывает взаимосвязь между вызовами и функциями обратного вызова:
+\begin{tabular}{l|l}
+    \textbf{gen\_server} & \textbf{YourModule} \\
+    \hline
+    \ops{start/3-4} & \ops{init/1} \\
+    \ops{start\_link/3-4} & \ops{init/1} \\
+    \ops{call/2-3} & \ops{handle\_call/3} \\
+    \ops{cast/2} & \ops{handle\_cast/2} \\
+\end{tabular}
+
+Ну и остаются ещё другие функции обратного вызова, которые относятся к особенным случаям:
+\begin{itemize}
+    \item \ops{handle\_info/2}
+    \item \ops{terminate/2}
+    \item \ops{code\_change/3}
+\end{itemize}
+
+Давайте изменим функции \ops{init/1}, \ops{handle\_call/3} и \ops{handle\_cast/2}, так, чтобы они соответствовали нашей модели.
+\begin{lstlisting}[style=erlang]
+%%% Server functions
+init([]) -> {ok, []}. %% no treatment of info here!
+ 
+handle_call({order, Name, Color, Description}, _From, Cats) ->
+    if Cats =:= [] ->
+        {reply, make_cat(Name, Color, Description), Cats};
+        Cats =/= [] ->
+        {reply, hd(Cats), tl(Cats)}
+    end;
+handle_call(terminate, _From, Cats) ->
+    {stop, normal, ok, Cats}.
+ 
+handle_cast({return, Cat = #cat{}}, Cats) ->
+    {noreply, [Cat|Cats]}.
+\end{lstlisting}
+
+И снова изменений получилось не так уж и много.
+Код даже стал короче, благодаря толковым абстракциям.
+Теперь обратимся к новым функциям обратного вызова.
+Первая на очереди \--- \ops{handle\_info/2}.
+Так как этот модуль серьёзным назвать нельзя, и мы не используем в нём систему журналирования, будет достаточно просто вывести непредусмотренные (unexpected) сообщения на печать:
+\begin{lstlisting}[style=erlang]
+handle_info(Msg, Cats) ->
+    io:format("Unexpected message: ~p~n",[Msg]),
+    {noreply, Cats}.
+\end{lstlisting}
+
+Следующая на очереди \--- функция \ops{terminate/2}.
+Она будет очень похожа на закрытую (private) функцию \ops{terminate/1}, написанную нами ранее:
+\begin{lstlisting}[style=erlang]
+terminate(normal, Cats) ->
+    [io:format("~p was set free.~n",[C#cat.name]) || C <- Cats],
+    ok.
+\end{lstlisting}
+Ну и последняя функция \--- \ops{code\_change/3}:
+\begin{lstlisting}[style=erlang]
+code_change(_OldVsn, State, _Extra) ->
+    %% No change planned. The function is there for the behaviour,
+    %% but will not be used. Only a version on the next
+    {ok, State}.
+\end{lstlisting}
+Не забудьте перенести закрытую (private) функцию \ops{make\_cat/3}:
+\begin{lstlisting}[style=erlang]
+%%% Private functions
+make_cat(Name, Col, Desc) ->
+    #cat{name=Name, color=Col, description=Desc}.
+\end{lstlisting}
+Теперь мы можем опробовать наш новенький код в деле:
+\begin{lstlisting}[style=erlang]
+1> c(kitty_gen_server).
+{ok,kitty_gen_server}
+2> rr(kitty_gen_server).
+[cat]
+3> {ok, Pid} = kitty_gen_server:start_link().
+{ok,<0.253.0>}
+4> Pid ! <<"Test handle_info">>.
+Unexpected message: <<"Test handle_info">>
+<<"Test handle_info">>
+5> Cat = kitty_gen_server:order_cat(Pid, "Cat Stevens", white, "not actually a cat").
+#cat{name = "Cat Stevens",color = white,
+    description = "not actually a cat"}
+6> kitty_gen_server:return_cat(Pid, Cat).
+ok
+7> kitty_gen_server:order_cat(Pid, "Kitten Mittens", black, "look at them little paws!").
+#cat{name = "Cat Stevens",color = white,
+    description = "not actually a cat"}
+8> kitty_gen_server:order_cat(Pid, "Kitten Mittens", black, "look at them little paws!").
+#cat{name = "Kitten Mittens",color = black,
+    description = "look at them little paws!"}
+9> kitty_gen_server:return_cat(Pid, Cat).
+ok      
+10> kitty_gen_server:close_shop(Pid).
+"Cat Stevens" was set free.
+ok
+\end{lstlisting}
+И он работает, чёрт возьми!
+
+\begin{wrapfigure}{r}{0.35\linewidth}
+    \includegraphics[width=1\linewidth]{mittens.png}
+\end{wrapfigure}
+Так что же мы можем извлечь из этого обобщённого приключения?
+Наверно, приблизительно то же, что и раньше: разделение общего и частного это прекрасная идея во всех смыслах.
+Поддержка кода упрощается, сложность уменьшается, код становится безопаснее, его проще тестировать и он менее подвержен ошибкам.
+А если ошибки в нём всё\--таки есть, то их проще устранять.
+Обобщённый сервер это лишь одна абстракция из множества доступных, но она, безусловно, относится к наиболее используемым.
+В следующей главе мы рассмотрим ещё больше абстракций и стратегий поведения.
