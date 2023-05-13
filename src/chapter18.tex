@@ -511,3 +511,171 @@ pet
     \centering
     \includegraphics[width=0.7\textwidth]{take-a-break.png}
 \end{figure}
+\subchapter{Торговля между двумя игроками}
+\label{game-trading-between-two-players}
+Перво\--наперво для реализации нашего протокола при помощи \ops{gen\_fsm} необходимо создать интерфейс.
+В нашем модуле будет 3 источника вызовов: игрок, поведение \ops{gen\_fsm} и конечный автомат удаленного игрока.
+Нам, впрочем, будет необходимо проэкспортировать лишь функции игрока и \ops{gen\_fsm}.
+Так происходит потому, что удаленный конечный автомат также будет исполняться внутри модуля \href{http://learnyousomeerlang.com/static/erlang/trade\_fsm.erl}{trade\_fsm} и сможет получить доступ к остальным частям изнутри:
+
+\begin{lstlisting}[style=erlang]
+-module(trade_fsm).
+-behaviour(gen_fsm).
+ 
+ %% public API
+ -export([start/1, start_link/1, trade/2, accept_trade/1,
+ make_offer/2, retract_offer/2, ready/1, cancel/1]).
+ %% gen_fsm callbacks
+ -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3,
+ terminate/3, code_change/4,
+ % custom state names
+ idle/2, idle/3, idle_wait/2, idle_wait/3, negotiate/2,
+ negotiate/3, wait/2, ready/2, ready/3]).
+\end{lstlisting}
+
+Вот он, наш API.
+Как видите, я рассчитываю, чтобы некоторые функции были как синхронными, так и асинхронными.
+Сделано это по большей части потому, что мы хотим, чтобы наш клиент иногда вызывал нас синхронно, но чтобы у удаленного конечного автомата оставалась возможность делать это асинхронно.
+Синхронность клиентских вызовов значительно упрощает нашу логику, ограничивая количество противоречащих друг другу сообщений, которые могут посылаться один за другим.
+Но мы к этому еще вернемся.
+Давайте для начала реализуем сам публичный API, согласно протоколу, определенному выше:
+\begin{lstlisting}[style=erlang]
+%%% PUBLIC API
+start(Name) ->
+	gen_fsm:start(?MODULE, [Name], []).
+ 
+start_link(Name) ->
+	gen_fsm:start_link(?MODULE, [Name], []).
+ 
+%% ask for a begin session. Returns when/if the other accepts
+trade(OwnPid, OtherPid) ->
+	gen_fsm:sync_send_event(OwnPid, {negotiate, OtherPid}, 30000).
+ 
+%% Accept someone's trade offer.
+accept_trade(OwnPid) ->
+	gen_fsm:sync_send_event(OwnPid, accept_negotiate).
+ 
+%% Send an item on the table to be traded
+make_offer(OwnPid, Item) ->
+	gen_fsm:send_event(OwnPid, {make_offer, Item}).
+ 
+%% Cancel trade offer
+retract_offer(OwnPid, Item) ->
+	gen_fsm:send_event(OwnPid, {retract_offer, Item}).
+ 
+%% Mention that you're ready for a trade. When the other
+%% player also declares being ready, the trade is done
+ready(OwnPid) ->
+	gen_fsm:sync_send_event(OwnPid, ready, infinity).
+ 
+%% Cancel the transaction.
+cancel(OwnPid) ->
+	gen_fsm:sync_send_all_state_event(OwnPid, cancel).
+\end{lstlisting}
+
+Все это довольно стандартно \--- все эти функции ''gen\_fsm'' мы уже обозревали ранее (кроме \href{http://erldocs.com/18.0/stdlib/gen_fsm.html#start/3}{start/3-4} и \href{http://erldocs.com/18.0/stdlib/gen_fsm.html#start_link/3}{start\_link/3-4}, которые вы и сами, я думаю, в состоянии понять) в этой главе.
+
+Далее мы реализуем функции взаимодействия между конечными автоматами.
+Первые из них относятся к процедуре начала торговли, когда мы впервые хотим попросить удаленного пользователя вступить с нами в торговый процесс:
+\begin{lstlisting}[style=erlang]
+%% Ask the other FSM's Pid for a trade session
+ask_negotiate(OtherPid, OwnPid) ->
+	gen_fsm:send_event(OtherPid, {ask_negotiate, OwnPid}).
+ 
+%% Forward the client message accepting the transaction
+accept_negotiate(OtherPid, OwnPid) ->
+	gen_fsm:send_event(OtherPid, {accept_negotiate, OwnPid}).
+\end{lstlisting}
+
+Первая функция спрашивает удаленный pid, хочет ли он торговать, а вторая используется для ответа на этот вопрос (все это, само собой, асинхронно).
+
+Затем мы можем написать функции для создания и отмены торговых предложений.
+Согласно нашего протокола, они должны выглядеть так:
+\begin{lstlisting}[style=erlang]
+%% forward a client's offer
+do_offer(OtherPid, Item) ->
+	gen_fsm:send_event(OtherPid, {do_offer, Item}).
+ 
+%% forward a client's offer cancellation
+undo_offer(OtherPid, Item) ->
+	gen_fsm:send_event(OtherPid, {undo_offer, Item}).
+\end{lstlisting}
+
+Ну вот, с этими вызовами мы справились, теперь нам необходимо сконцентрироваться на остальных.
+Оставшиеся вызовы относятся к состоянию готовности или неготовности к совершению процедуры финализации сделки.
+И снова, согласно нашего протокола, у нас есть три вызова: \ops{are\_you\_ready}, на который могут последовать ответы \ops{not\_yet}  или \ops{ready!}:
+
+\begin{lstlisting}[style=erlang]
+%% Ask the other side if he's ready to trade.
+are_you_ready(OtherPid) ->
+	gen_fsm:send_event(OtherPid, are_you_ready).
+ 
+%% Reply that the side is not ready to trade
+%% i.e. is not in 'wait' state.
+not_yet(OtherPid) ->
+	gen_fsm:send_event(OtherPid, not_yet).
+ 
+%% Tells the other fsm that the user is currently waiting
+%% for the ready state. State should transition to 'ready'
+am_ready(OtherPid) ->
+	gen_fsm:send_event(OtherPid, 'ready!').
+\end{lstlisting}
+
+Остались только те функции, которые должны использоваться обоими конечными автоматами при завершении сделки в состоянии \ops{ready}.
+Процесс их использования будет в деталях описан позже, а сейчас будет довольно их имен и диаграммы последовательности/состояния, приведенной ранее.
+Тем не менее, вы можете перевести их в собственную версию \href{http://learnyousomeerlang.com/static/erlang/trade_fsm.erl}{trade\_fsm}:
+\begin{lstlisting}[style=erlang]
+%% Acknowledge that the fsm is in a ready state.
+ack_trans(OtherPid) ->
+	gen_fsm:send_event(OtherPid, ack).
+ 
+%% ask if ready to commit
+ask_commit(OtherPid) ->
+	gen_fsm:sync_send_event(OtherPid, ask_commit).
+ 
+%% begin the synchronous commit
+do_commit(OtherPid) ->
+	gen_fsm:sync_send_event(OtherPid, do_commit).
+\end{lstlisting}
+Ну и еще стоит упомянуть функцию, которая позволит нам соблюсти этикет и предупредить удаленный конечный автомат о том, что мы отменили сделку:
+\begin{lstlisting}[style=erlang]
+notify_cancel(OtherPid) ->
+	gen_fsm:send_all_state_event(OtherPid, cancel).
+\end{lstlisting}
+Теперь мы можем перейти к по\--настоящему интересной теме: функциям обратного вызова \ops{gen\_fsm}.
+Первый вызов это \ops{init/1}.
+Мы хотим, чтобы каждый конечный автомат хранил имя того пользователя, которого он представляет (так мы сможем сделать вывод более красивым) в данных, которые он передает самому себе.
+Что еще мы хотим хранить в памяти?
+pid удаленного пользователя, товары которые мы предлагаем к торговле, и товары, которые предлагают нам.
+Также мы добавим ссылку на монитор (чтобы мы знали, что нам пора завершаться, если удаленная сторона умерла) и поле \ops{from}, которое используется для совершения отложенных ответов:
+\begin{lstlisting}[style=erlang]
+-record(state, {name="",
+	other,
+	ownitems=[],
+	otheritems=[],
+	monitor,
+	from}).
+\end{lstlisting}
+Что касается \ops{init/1}, сейчас нас будет интересовать лишь наше имя.
+Обратите внимание, что мы стартуем в состоянии \opd{idle}:
+\begin{lstlisting}[style=erlang]
+init(Name) ->
+	{ok, idle, #state{name=Name}}.
+\end{lstlisting}
+Следующими функциями обратного вызова, достойными рассмотрения, будут сами состояния.
+К текущему моменту я описал переходы между состояниями и возможные вызовы, но нам также необходимо иметь возможность убедиться, что все идет согласно задуманному плану.
+Для начала мы напишем несколько служебных функций:
+\begin{lstlisting}[style=erlang]
+%% Send players a notice. This could be messages to their clients
+%% but for our purposes, outputting to the shell is enough.
+notice(#state{name=N}, Str, Args) ->
+	io:format("~s: "++Str++"~n", [N|Args]).
+ 
+%% Unexpected allows to log unexpected messages
+unexpected(Msg, State) ->
+	io:format("~p received unknown event ~p while in state ~p~n",
+		[self(), Msg, State]).
+\end{lstlisting}
+И начнем мы с состояния бездействия.
+Ради однообразия я сначала опишу асинхронную версиию.
+Ей не придется ни о чем беспокоиться, кроме 
